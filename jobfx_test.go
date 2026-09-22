@@ -24,7 +24,7 @@ func TestModule_ProvidesARunner(t *testing.T) {
 	app := fxtest.New(
 		t,
 		fx.Supply(job.Config{Timeout: time.Second}),
-		provideWork(func(context.Context) (int, error) { return 1, nil }),
+		provideWork(func(context.Context) (int64, error) { return 1, nil }),
 		jobfx.Module(),
 		fx.Populate(&runner),
 	)
@@ -48,7 +48,7 @@ func TestModule_RunsNothingOnStart(t *testing.T) {
 	app := fxtest.New(
 		t,
 		fx.Supply(job.Config{Timeout: time.Second}),
-		provideWork(func(context.Context) (int, error) {
+		provideWork(func(context.Context) (int64, error) {
 			calls.Add(1)
 
 			return 0, nil
@@ -80,7 +80,7 @@ func TestModule_OptionOrder(t *testing.T) {
 
 	mark := func(name string) job.Middleware {
 		return func(next job.Func) job.Func {
-			return func(ctx context.Context) (int, error) {
+			return func(ctx context.Context) (int64, error) {
 				order = append(order, name)
 
 				return next(ctx)
@@ -93,7 +93,7 @@ func TestModule_OptionOrder(t *testing.T) {
 	app := fxtest.New(
 		t,
 		fx.Supply(job.Config{Timeout: time.Second}),
-		provideWork(func(context.Context) (int, error) {
+		provideWork(func(context.Context) (int64, error) {
 			order = append(order, "work")
 
 			return 0, nil
@@ -129,7 +129,7 @@ func TestModule_OptionsAreOptional(t *testing.T) {
 	app := fxtest.New(
 		t,
 		fx.Supply(job.Config{}),
-		provideWork(func(context.Context) (int, error) { return 0, nil }),
+		provideWork(func(context.Context) (int64, error) { return 0, nil }),
 		jobfx.Module(),
 	)
 
@@ -142,7 +142,7 @@ func TestModule_OptionsAreOptional(t *testing.T) {
 func TestModule_RejectsABadConfig(t *testing.T) {
 	app := fx.New(
 		fx.Supply(job.Config{Timeout: -time.Second}),
-		provideWork(func(context.Context) (int, error) { return 0, nil }),
+		provideWork(func(context.Context) (int64, error) { return 0, nil }),
 		jobfx.Module(),
 		fx.Invoke(func(*job.Runner) {}),
 		fx.NopLogger,
