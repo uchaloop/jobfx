@@ -3,7 +3,7 @@ module github.com/uchaloop/jobfx
 go 1.27
 
 require (
-	github.com/uchaloop/job v0.2.0
+	github.com/uchaloop/job v0.3.0
 	go.uber.org/fx v1.24.0
 )
 
