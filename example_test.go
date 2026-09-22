@@ -65,7 +65,7 @@ func runOnce() int {
 		fx.Supply(slog.Default()),
 
 		fx.Provide(func() job.Func {
-			return func(ctx context.Context) (int, error) {
+			return func(ctx context.Context) (int64, error) {
 				// One bounded batch of application work.
 				return 3, ctx.Err()
 			}

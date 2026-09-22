@@ -10,7 +10,7 @@ job.Func, and an optional ordered [Options]:
 		confx.Provide[job.Config](),
 
 		fx.Provide(func(db *sql.DB) job.Func {
-			return func(ctx context.Context) (int, error) { return drain(ctx, db) }
+			return func(ctx context.Context) (int64, error) { return drain(ctx, db) }
 		}),
 
 		jobfx.Module(),
