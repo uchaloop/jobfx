@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.2] - 2026-10-01
+
+- go get -u all
+
 ## [0.1.1] - 2026-09-22
 
 - Update package documentation, README examples and tests for job's `int64`
