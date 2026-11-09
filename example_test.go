@@ -14,7 +14,7 @@ import (
 	"github.com/uchaloop/jobfx"
 )
 
-// ExampleMakeApp shows one job attempt after an optional ownership decision.
+// ExampleMakeApp shows lazy cluster selection before any Fx construction.
 // App owns startup, work and observation; the caller defers cleanup and decides
 // the process exit code. Work never runs inside an Fx hook.
 func ExampleMakeApp() {
@@ -28,33 +28,6 @@ func runOnce() int {
 	// late must not take it from the clock, or it would decide as a later point
 	// than the one it was meant to serve.
 	scheduledAt := time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC)
-
-	rotation, err := assignment.MakeRotation(assignment.Config{
-		Clusters: []string{"el", "xc", "dm"},
-		Current:  "el",
-		Period:   4 * time.Hour,
-	})
-	if err != nil {
-		slog.Error("configure rotation", "error", err)
-
-		return 1
-	}
-
-	decision, err := rotation.Decide(assignment.Invocation{ScheduledAt: scheduledAt})
-	if err != nil {
-		slog.Error("decide owner", "error", err)
-
-		return 1
-	}
-
-	if !decision.IsExecutable {
-		// Another cluster owns this point. Nothing ran, and that is a clean
-		// finish - the decision itself is what observability records, because
-		// no Result will ever be produced for it.
-		slog.Info("point belongs elsewhere", "slot", decision.Slot, "owner", decision.Owner)
-
-		return 0
-	}
 
 	app := jobfx.MakeApp(
 		fx.Supply(job.Config{Timeout: 4 * time.Minute}),
@@ -84,7 +57,17 @@ func runOnce() int {
 			})
 		}),
 		fx.NopLogger,
-	)
+	).WithAssignment(func(ctx context.Context) (assignment.Config, assignment.Invocation, error) {
+		if err := ctx.Err(); err != nil {
+			return assignment.Config{}, assignment.Invocation{}, err
+		}
+
+		return assignment.Config{
+			Clusters: []string{"el", "xc", "dm"},
+			Current:  "el",
+			Period:   4 * time.Hour,
+		}, assignment.Invocation{ScheduledAt: scheduledAt}, nil
+	})
 
 	defer func() {
 		if err := app.Stop(); err != nil {

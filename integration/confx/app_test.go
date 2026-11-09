@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/uchaloop/confmaker/v2"
 	"github.com/uchaloop/confx"
 	"github.com/uchaloop/job"
+	"github.com/uchaloop/job/assignment"
 	"github.com/uchaloop/jobfx"
 	"github.com/uchaloop/secret/v2"
 	"go.uber.org/fx"
@@ -114,4 +118,102 @@ func TestCLIWriter(t *testing.T) {
 			t.Fatalf("handled=%v err=%v", isHandled, err)
 		}
 	}
+}
+
+func TestExecuteConfxProcess(t *testing.T) {
+	for _, arg := range []string{"run", "skip", "assignment-error", "-help", "-describe=json", "-unknown"} {
+		t.Run(arg, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestExecuteConfxHelper$")
+			cmd.Env = append(os.Environ(), "JOBFX_CONFX_EXECUTE="+arg)
+			output, err := cmd.CombinedOutput()
+			if arg == "-unknown" || arg == "assignment-error" {
+				var exitErr *exec.ExitError
+				if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || len(output) != 0 {
+					t.Fatalf("err=%v output=%s", err, output)
+				}
+
+				return
+			}
+
+			if err != nil || strings.Contains(string(output), "hidden-default") {
+				t.Fatalf("err=%v output=%s", err, output)
+			}
+
+			if arg == "skip" {
+				if len(output) != 0 {
+					t.Fatalf("skip output=%s", output)
+				}
+
+				return
+			}
+
+			if arg == "run" {
+				if string(output) != "work\ncleanup\n" {
+					t.Fatalf("output=%s", output)
+				}
+
+				return
+			}
+
+			if len(output) == 0 || strings.Contains(string(output), "work\n") || strings.Contains(string(output), "cleanup\n") {
+				t.Fatalf("CLI constructed runtime or produced no output: %s", output)
+			}
+		})
+	}
+}
+
+func TestExecuteConfxHelper(t *testing.T) {
+	arg := os.Getenv("JOBFX_CONFX_EXECUTE")
+	if len(arg) == 0 {
+		return
+	}
+
+	os.Args = []string{"job"}
+	if strings.HasPrefix(arg, "-") {
+		os.Args = append(os.Args, arg)
+	}
+
+	jobfx.Execute(confx.New(
+		confx.Provide[job.Config]("job"),
+		confx.Provide[config]("app"),
+		confx.Runtime(
+			fx.NopLogger,
+			jobfx.Module(),
+			fx.Provide(func() job.Func {
+				return func(context.Context) (int64, error) {
+					fmt.Println("work")
+
+					return 1, nil
+				}
+			}),
+			fx.Invoke(func(lc fx.Lifecycle) {
+				lc.Append(fx.Hook{OnStop: func(context.Context) error {
+					fmt.Println("cleanup")
+
+					return nil
+				}})
+			}),
+		),
+	).WithOptions(confmaker.WithEnv(map[string]string{"APP_TOKEN": "hidden-input"})),
+		jobfx.WithAssignment(func(context.Context) (assignment.Config, assignment.Invocation, error) {
+			if strings.HasPrefix(arg, "-") {
+				panic("CLI called assignment source")
+			}
+
+			if arg == "assignment-error" {
+				return assignment.Config{}, assignment.Invocation{}, errors.New("assignment source failed")
+			}
+
+			current := "a"
+			if arg == "skip" {
+				current = "b"
+			}
+
+			return assignment.Config{Clusters: []string{"a", "b"}, Current: current, Period: time.Minute},
+				assignment.Invocation{ScheduledAt: time.Unix(0, 0)}, nil
+		}),
+	)
 }

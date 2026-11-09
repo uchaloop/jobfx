@@ -2,6 +2,7 @@ package jobfx_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -150,5 +151,44 @@ func TestModule_RejectsABadConfig(t *testing.T) {
 
 	if app.Err() == nil {
 		t.Fatal("the graph accepted a negative timeout")
+	}
+}
+
+func TestModuleCopiesOptions(t *testing.T) {
+	var originalCalls, replacementCalls int
+	original := job.WithErrorHandler(func(context.Context, error) error {
+		originalCalls++
+
+		return nil
+	})
+	options := []job.Option{original}
+	module := jobfx.Module(options...)
+	options[0] = job.WithErrorHandler(func(context.Context, error) error {
+		replacementCalls++
+
+		return nil
+	})
+
+	for range 2 {
+		var runner *job.Runner
+		app := fxtest.New(
+			t,
+			fx.NopLogger,
+			fx.Supply(job.Config{}),
+			provideWork(func(context.Context) (int64, error) { return 0, errors.New("work failed") }),
+			module,
+			fx.Populate(&runner),
+		)
+		app.RequireStart()
+		result := runner.Run(context.Background())
+		app.RequireStop()
+
+		if !result.IsErrorHandlerCalled {
+			t.Fatal("error handler was not invoked")
+		}
+	}
+
+	if originalCalls != 2 || replacementCalls != 0 {
+		t.Fatalf("original=%d replacement=%d", originalCalls, replacementCalls)
 	}
 }

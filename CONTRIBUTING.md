@@ -7,7 +7,10 @@ The separate integration module must be checked explicitly.
 `jobfx.New` is the agreed constructor naming exception for the lazy application
 entry point. It defers validation to Start. `App.Stop()` intentionally uses an
 internally owned cleanup context and budget; it must work after cancellation of
-Start's context. No process-exit exception is introduced in jobfx.
+Start's context. `Execute` is the agreed process-entry exception to the no-exit rule. It calls
+`os.Exit` only after its internal execution function has completed deferred
+cleanup. It intentionally discards cleanup errors without logging. Keep the
+manual App API available for callers that need to inspect those errors.
 
 ## Platform checks
 

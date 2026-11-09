@@ -6,9 +6,17 @@ Module provides a Runner from job.Config, job.Func and optional Options. It
 never runs work or installs a work OnStart hook. Schedulers and applications
 with their own lifecycle can keep using Module with ordinary fx.New.
 
-For one-shot processes, MakeApp accepts Fx options and New accepts an Application
+Execute is the process entry point for Fx options, an Application or a configured
+App. It uses a background context and exits after cleanup without adding logs.
+Caller defers do not run on normal exit. Use the manual App API to inspect errors.
+WithAssignment adds cluster selection after CLI and before Fx construction,
+delegating ownership policy to job/assignment. A skipped cluster exits with zero
+without running constructors, lifecycle hooks, work or result handlers.
+
+For manual one-shot lifecycle, MakeApp accepts Fx options and New accepts an Application
 such as *confx.App. Both are lazy. App.Start handles CLI before constructing Fx,
-starts dependencies, runs one job, then calls an optional job.Handler. The caller
+checks optional assignment, starts dependencies, runs one job, then calls an
+optional job.Handler. The caller
 must defer App.Stop and decide when to exit the process. See ExampleMakeApp.
 
 Startup, observation and cleanup default to 30, 10 and 30 seconds respectively;
@@ -29,6 +37,8 @@ that order, with the first wrapper outermost.
 package jobfx
 
 import (
+	"slices"
+
 	"github.com/uchaloop/job"
 	"go.uber.org/fx"
 )
@@ -56,7 +66,8 @@ type params struct {
 	Options Options `optional:"true"`
 }
 
-// Module provides a *job.Runner built from the container. It runs nothing: see
+// Module copies the input option slice; referenced option state remains shared.
+// It provides a *job.Runner built from the container. It runs nothing: see
 // the package documentation for the sequence a one-shot process owns.
 //
 // Options come from two places and both are applied, in one defined order: the
@@ -65,6 +76,8 @@ type params struct {
 // Module outside everything the container adds, which is where it can still
 // catch a panic from those wrappers.
 func Module(opts ...job.Option) fx.Option {
+	opts = slices.Clone(opts)
+
 	return fx.Module(
 		"job",
 
