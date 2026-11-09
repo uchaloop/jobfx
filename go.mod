@@ -1,3 +1,4 @@
+// Deprecated: Use github.com/uchaloop/beatfx/jobfx instead.
 module github.com/uchaloop/jobfx
 
 go 1.27

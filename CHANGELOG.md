@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-11-09
+
+### Deprecated
+
+- Deprecated this module in favor of `github.com/uchaloop/beatfx/jobfx`.
+  See README for import-path migration. Existing API and runtime behavior remain unchanged.
+
 ## [0.2.1] - 2026-11-09
 
 ### Added
