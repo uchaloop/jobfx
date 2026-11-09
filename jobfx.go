@@ -33,6 +33,8 @@ not automatically request a retry of successful business work.
 Options is one ordered slice rather than an unordered Fx value group. Options
 passed to Module come first, then container options; middleware accumulates in
 that order, with the first wrapper outermost.
+
+Deprecated: Use github.com/uchaloop/beatfx/jobfx instead.
 */
 package jobfx
 

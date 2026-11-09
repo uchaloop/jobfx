@@ -1,5 +1,8 @@
 # jobfx
 
+> **Deprecated:** Use [`github.com/uchaloop/beatfx/jobfx`](https://pkg.go.dev/github.com/uchaloop/beatfx/jobfx) instead.
+> The implementation now lives in beatfx. See [Migration](#migration).
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/uchaloop/jobfx.svg)](https://pkg.go.dev/github.com/uchaloop/jobfx) [![CI](https://github.com/uchaloop/jobfx/actions/workflows/ci.yml/badge.svg)](https://github.com/uchaloop/jobfx/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/tag/uchaloop/jobfx?label=release)](https://github.com/uchaloop/jobfx/tags) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Optional Uber Fx integration for [job](https://github.com/uchaloop/job).**
@@ -8,11 +11,31 @@ Importing job alone does not require Fx.
 
 [Install](#installation) · [Quick start](#quick-start) · [Lifecycle](#run-the-process) · [Multicluster](#multicluster-assignment) · [Confx support](#optional-confx-support) · [Reference](#reference)
 
+## Migration
+
+Update related imports together:
+
+| Old import | Replacement |
+|---|---|
+| `github.com/uchaloop/jobfx` | `github.com/uchaloop/beatfx/jobfx` |
+| `github.com/uchaloop/job` | `github.com/uchaloop/beat/job` |
+| `github.com/uchaloop/job/assignment` | `github.com/uchaloop/beat/assignment` |
+| `github.com/uchaloop/job/middleware/recovery` | `github.com/uchaloop/beat/job/middleware/recovery` |
+
+```sh
+go get github.com/uchaloop/beat@latest github.com/uchaloop/beatfx@latest
+```
+
+The package names remain the same. Old and new named types have different
+Go identities: update providers, handlers, middleware and assignment policies
+together rather than mixing old and new packages in one Fx graph.
+This deprecation does not change the old API or runtime behavior.
+See the [replacement documentation](https://github.com/uchaloop/beatfx) for the current API and examples.
+
 ## Installation
 
-Requires Go 1.27 or later. This README describes the current branch.
-The command below installs the published release. Execute is new in v0.2.1 and requires
-this checkout until that release; use the local setup below to try them.
+Requires Go 1.27 or later. The remaining examples document the deprecated
+standalone module for existing users. For new code, follow Migration above.
 
 ```sh
 go get github.com/uchaloop/jobfx@latest
