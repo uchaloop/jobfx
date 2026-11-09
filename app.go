@@ -5,12 +5,12 @@ import (
 	"errors"
 	"io"
 	"os"
-	"reflect"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/uchaloop/job"
+	"github.com/uchaloop/job/assignment"
 	"go.uber.org/fx"
 )
 
@@ -32,20 +32,35 @@ type AppConfig struct {
 }
 
 // Result distinguishes a completed CLI request from an attempted job.
-// Job is nil for CLI requests and startup errors.
+// Assignment is nil when selection is disabled or CLI handled the request.
+// Job is nil for CLI, skipped clusters, assignment errors and startup errors.
 type Result struct {
 	IsCLIHandled bool
+	Assignment   *assignment.Decision
 	Job          *job.Result
 }
 
-// ExitCode returns zero for successful CLI or an OK job, and one otherwise.
+// ExitCode returns zero for successful CLI, a skipped cluster or an OK job.
+// It returns one for an empty or inconsistent result and unsuccessful work.
 // Callers must handle Start errors separately. Cleanup does not change this code.
 func (r Result) ExitCode() int {
-	if r.IsCLIHandled && r.Job == nil {
+	if r.IsCLIHandled && r.Job == nil && r.Assignment == nil {
 		return 0
 	}
 
-	if !r.IsCLIHandled && r.Job != nil && r.Job.Outcome == job.OutcomeOK {
+	if r.IsCLIHandled {
+		return 1
+	}
+
+	if r.Assignment != nil && !r.Assignment.IsExecutable {
+		if r.Job == nil {
+			return 0
+		}
+
+		return 1
+	}
+
+	if r.Job != nil && r.Job.Outcome == job.OutcomeOK {
 		return 0
 	}
 
@@ -82,17 +97,20 @@ const (
 // ErrAppBusy. Sequential Stop calls return the original cleanup error.
 // The zero value rejects Start with ErrApplicationIsNil. User panics propagate.
 type App struct {
-	mu            sync.Mutex
-	application   Application
-	config        AppConfig
-	state         appState
-	configErr     error
-	stopErr       error
-	fxApp         *fx.App
-	cleanupBase   context.Context
-	cancelWork    context.CancelFunc
-	bridgeDone    chan struct{}
-	bridgeStopped chan struct{}
+	mu               sync.Mutex
+	application      Application
+	config           AppConfig
+	state            appState
+	configErr        error
+	assignmentSource AssignmentSource
+	isAssignmentSet  bool
+	assignmentErr    error
+	stopErr          error
+	fxApp            *fx.App
+	cleanupBase      context.Context
+	cancelWork       context.CancelFunc
+	bridgeDone       chan struct{}
+	bridgeStopped    chan struct{}
 }
 
 // New stores a lazy application. It does not parse CLI, build Fx or load config.
@@ -112,20 +130,36 @@ func MakeApp(options ...fx.Option) *App {
 // The composition is shared. Cloning an already used App produces an App whose
 // Start returns ErrAppUsed. Validation is deferred to Start to preserve laziness.
 func (a *App) WithConfig(cfg AppConfig) *App {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	clone := &App{application: a.application, config: cfg, configErr: a.configErr}
-	if a.state != appUnused {
-		clone.configErr = ErrAppUsed
-	}
+	clone := a.clone()
+	clone.config = cfg
 
 	return clone
 }
 
-// Start handles process CLI first, then starts dependencies, runs the job once
+func (a *App) clone() *App {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.state != appUnused {
+		return &App{configErr: ErrAppUsed}
+	}
+
+	return &App{
+		application:      a.application,
+		config:           a.config,
+		configErr:        a.configErr,
+		assignmentSource: a.assignmentSource,
+		isAssignmentSet:  a.isAssignmentSet,
+		assignmentErr:    a.assignmentErr,
+	}
+}
+
+// Start handles process CLI, then optional assignment before constructing Fx.
+// A non-owner returns a decision without invoking runtime constructors or handlers.
+// The owner starts dependencies, runs the job once
 // and delivers its result to an optional job.Handler. Business failures are in
-// Result.Job, not the returned error. CLI/build/start failures have no Job.
+// Result.Job, not the returned error. CLI/assignment/build/start failures have
+// no Job.
 // Observation preserves context values but has an independent timeout. Start
 // does not call os.Exit, Fx.Run or Shutdowner on normal job completion.
 func (a *App) Start(ctx context.Context) (Result, error) {
@@ -154,6 +188,15 @@ func (a *App) Start(ctx context.Context) (Result, error) {
 		return Result{IsCLIHandled: isHandled && err == nil}, err
 	}
 
+	decision, err := a.decideAssignment(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+
+	if decision != nil && !decision.IsExecutable {
+		return Result{Assignment: decision}, nil
+	}
+
 	var deps struct {
 		fx.In
 		Runner  *job.Runner
@@ -161,7 +204,7 @@ func (a *App) Start(ctx context.Context) (Result, error) {
 	}
 	a.fxApp = fx.New(a.application.FX(), fx.Populate(&deps))
 	if err := a.fxApp.Err(); err != nil {
-		return Result{}, err
+		return Result{Assignment: decision}, err
 	}
 
 	workCtx, cancelWork := context.WithCancel(ctx)
@@ -180,7 +223,7 @@ func (a *App) Start(ctx context.Context) (Result, error) {
 	}()
 
 	if err := a.startDependencies(workCtx); err != nil {
-		return Result{}, err
+		return Result{Assignment: decision}, err
 	}
 
 	result := deps.Runner.Run(workCtx)
@@ -188,7 +231,7 @@ func (a *App) Start(ctx context.Context) (Result, error) {
 		a.observe(a.cleanupBase, deps.Handler, result)
 	}
 
-	return Result{Job: &result}, nil
+	return Result{Assignment: decision, Job: &result}, nil
 }
 
 // Stop releases dependencies with an independent cleanup budget and joins the
@@ -240,16 +283,8 @@ func (a *App) validate(ctx context.Context) error {
 		return ErrContextIsNil
 	}
 
-	if a.application == nil {
+	if isNilInput(a.application) {
 		return ErrApplicationIsNil
-	}
-
-	value := reflect.ValueOf(a.application)
-	switch value.Kind() {
-	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
-		if value.IsNil() {
-			return ErrApplicationIsNil
-		}
 	}
 
 	if a.config.StartupTimeout < 0 || a.config.ObserveTimeout < 0 || a.config.CleanupTimeout < 0 {

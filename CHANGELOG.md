@@ -1,6 +1,21 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.1] - Unreleased
+
+### Added
+
+- Added `Execute` as a process entry point accepting Fx options, an Application
+  such as confx.App, or a configured jobfx.App. It exits only after cleanup and
+  adds no logging; cleanup errors do not change the job exit code.
+
+- Added lazy multicluster assignment through `WithAssignment` and App settings.
+  CLI runs first; non-owner clusters exit successfully before Fx construction.
+  Assignment decisions are available in Result without fabricating a job attempt.
+
+### Fixed
+
+- Copied Module option slices so caller mutations cannot change a deferred Fx
+  composition or its reuse. Referenced option state remains shared.
 
 ## [0.2.0] - 2026-11-09
 
@@ -34,4 +49,6 @@
 [0.1.1]: https://github.com/uchaloop/jobfx/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uchaloop/jobfx/releases/tag/v0.1.0
 
-[Unreleased]: https://github.com/uchaloop/jobfx/compare/v0.1.2...HEAD
+[0.2.0]: https://github.com/uchaloop/jobfx/compare/v0.1.2...v0.2.0
+
+[0.2.1]: https://github.com/uchaloop/jobfx/compare/v0.2.0...HEAD
