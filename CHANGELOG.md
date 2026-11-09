@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added lazy `App`, `New` and `MakeApp` for one-shot work with explicit Start/Stop.
+- Added CLI-aware results and optional result observation, with configurable
+  startup/observation/cleanup defaults of 30/10/30 seconds.
+- Added cancellation bridging without synthetic termination on successful work.
+
+### Changed
+
+- Updated job to v0.4.0 and adapted examples and tests to its renamed assignment
+  fields and recovery constructor. Panic diagnostics now omit raw values and stacks.
+
 ## [0.1.2] - 2026-10-01
 
 - Update dependencies
@@ -17,3 +31,5 @@
 [0.1.2]: https://github.com/uchaloop/jobfx/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/uchaloop/jobfx/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uchaloop/jobfx/releases/tag/v0.1.0
+
+[Unreleased]: https://github.com/uchaloop/jobfx/compare/v0.1.2...HEAD

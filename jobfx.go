@@ -1,61 +1,30 @@
 /*
-Package jobfx provides a job.Runner through Uber Fx. It is an independent
-module; applications using job directly do not depend on Fx.
+Package jobfx connects job.Runner to Uber Fx. Applications using job directly
+remain independent of Fx.
 
-[Module] builds the Runner from what the container holds - a job.Config, a
-job.Func, and an optional ordered [Options]:
+Module provides a Runner from job.Config, job.Func and optional Options. It
+never runs work or installs a work OnStart hook. Schedulers and applications
+with their own lifecycle can keep using Module with ordinary fx.New.
 
-	fx.New(
-		confx.Module(),
-		confx.Provide[job.Config](),
+For one-shot processes, MakeApp accepts Fx options and New accepts an Application
+such as *confx.App. Both are lazy. App.Start handles CLI before constructing Fx,
+starts dependencies, runs one job, then calls an optional job.Handler. The caller
+must defer App.Stop and decide when to exit the process. See ExampleMakeApp.
 
-		fx.Provide(func(db *sql.DB) job.Func {
-			return func(ctx context.Context) (int64, error) { return drain(ctx, db) }
-		}),
+Startup, observation and cleanup default to 30, 10 and 30 seconds respectively;
+App.WithConfig replaces these settings. job.Config.Timeout still controls work.
+Observation and cleanup preserve context values with independent cancellation.
+All timeouts are cooperative: hooks, work and handlers must honor their contexts.
 
-		jobfx.Module(),
-	)
+Normal completion calls Fx.Stop directly without Fx.Run or a synthetic shutdown
+signal. SIGINT, SIGTERM and Fx shutdown requests cancel startup/work. Business
+failures are recorded in Result.Job; CLI and startup errors are returned separately.
+Cleanup errors do not change Result.ExitCode, so failed telemetry cleanup does
+not automatically request a retry of successful business work.
 
-# It does not run the work
-
-That is the whole point of the split. A scheduler drives the Runner in a loop; a
-one-shot process runs it once and exits. Neither is something an Fx hook should
-decide, so Module provides the Runner and stops there: no OnStart that runs the
-work, no Shutdowner, no exit code.
-
-A one-shot process therefore owns its own sequence, and owns it explicitly:
-
-	app.Start(startupCtx)   // dependencies first - no work before they are ready
-	result := runner.Run(workCtx)   // workCtx is cancelled by SIGTERM
-	handler.Handle(observeCtx, result)
-	app.Stop(cleanupCtx)    // a fresh budget, not the cancelled work context
-	os.Exit(code(result))
-
-Running the work inside OnStart would fold its duration into the startup
-timeout, and fx.Shutdowner would report an ordinary completion as a termination
-signal. Both read as something going wrong when nothing did.
-
-Subscribe to app.Wait before Start and cancel the startup/work context when Fx
-receives a shutdown request. Keep that subscription until cleanup completes.
-Cleanup gets an independent context. Cancellation remains cooperative: the
-application must wait for work to return before closing its dependencies.
-See ExampleModule for the complete sequence.
-
-# What the exit code says
-
-It tells the scheduler whether to try this work again, so only the attempt
-decides it: a non-ok Outcome is a non-zero code. A failure to flush telemetry
-after successful work is logged and reported, but must not raise the code -
-rerunning would repeat the business effect to fix an observability problem. An
-application that does want a failed flush to count can say so, as long as it
-says so deliberately.
-
-# Why one value and not a value group
-
-Fx produces the values of a group in an unspecified order, so two options that
-set the same thing resolve arbitrarily. [Options] arrives as one ordered value
-instead: options passed to Module are applied first, then the container's, each
-in the order it was written, and the last write wins predictably.
+Options is one ordered slice rather than an unordered Fx value group. Options
+passed to Module come first, then container options; middleware accumulates in
+that order, with the first wrapper outermost.
 */
 package jobfx
 
@@ -68,7 +37,7 @@ import (
 // container. Provide it once, and the order inside it is the order applied:
 //
 //	fx.Provide(func(log *slog.Logger) jobfx.Options {
-//		return jobfx.Options{job.WithMiddleware(recovery.Middleware(recovery.WithLogger(log)))}
+//		return jobfx.Options{job.WithMiddleware(recovery.MakeMiddleware(recovery.WithLogger(log)))}
 //	})
 //
 // A set that needs nothing from the container can be supplied outright with
