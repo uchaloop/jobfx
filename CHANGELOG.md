@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
 ### Added
 
 - Added lazy `App`, `New` and `MakeApp` for one-shot work with explicit Start/Stop.
